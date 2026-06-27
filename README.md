@@ -11,3 +11,20 @@ moter speed use tick/s(enc/s)
 on vmx enc -> 1464tick/1round  
 on knr enc -> 4096tick/1round  
 
+## file and function
+
+### joyControl
+
+/joy to /cmd_vel for ⁠Omnidirectional robot 
+
+### DCspeed
+
+/cmd_vel to motor speed   you can change this file to use three or four wheel robot
+
+### motion
+
+publish /cmd_vel for some move 
+
+### Motor Manger
+
+manage motor like pid (encoder feed back), EMS, and updown rail -> just for DC motor 

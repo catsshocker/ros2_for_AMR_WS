@@ -22,15 +22,27 @@ MotorManager::MotorManager(): Node("motor_manager"){
         "/titan0/m_3/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { encoderCallback(msg, 3); }
     );
 
+    this->declare_parameter<double>("wheel.kp", 1.0);
+    this->declare_parameter<double>("wheel.ki", 0.0);
+    this->declare_parameter<double>("wheel.kd", 0.1);
+    this->declare_parameter<double>("wheel.max_speed", 480.0);
+
+    this->declare_parameter<double>("updown.kp", 1.0);
+    this->declare_parameter<double>("updown.ki", 0.0);
+    this->declare_parameter<double>("updown.kd", 0.1);
+    this->declare_parameter<double>("updown.max_enc", 480.0);
+    this->declare_parameter<double>("updown.min_enc", -480.0);
+    this->declare_parameter<bool>("updown.invert", false);
+
     motor0_pub_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_0/cmd", 10);
     motor1_pub_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_1/cmd", 10);
     motor2_pub_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_2/cmd", 10);
     motor3_pub_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_3/cmd", 10);
 
-    pid_controllers_[0].setGains(1.0, 0.0, 0.1); 
-    pid_controllers_[1].setGains(1.0, 0.0, 0.1);
-    pid_controllers_[2].setGains(1.0, 0.0, 0.1);
-    pid_controllers_[3].setGains(1.0, 0.0, 0.1); // updown rail
+    pid_controllers_[0].setGains(wheel_kp_, wheel_ki_, wheel_kd_); 
+    pid_controllers_[1].setGains(wheel_kp_, wheel_ki_, wheel_kd_);
+    pid_controllers_[2].setGains(wheel_kp_, wheel_ki_, wheel_kd_);
+    pid_controllers_[3].setGains(updown_kp_, updown_ki_, updown_kd_); // updown rail
     for (int i = 0; i < 4; i++) {
         pid_controllers_[i].setOutputLimits(1.0, -1.0);
     }
@@ -94,7 +106,6 @@ void MotorManager::controlLoop(){
             motor_outputs[i] = pid_controllers_[i].update(target_enc_[i],encoder_counts_[i], DT);
         }
     }
-
     
     //updown rail (special)
     target_enc_[3] += d_enc_[3];
@@ -109,6 +120,54 @@ void MotorManager::controlLoop(){
     
     motor_msg.data = motor_outputs[2];
     motor2_pub_->publish(motor_msg);
+}
+
+void MotorManager::updateParameters() {
+    this->wheel_kp_ = this->get_parameter("wheel.kp").as_double();
+    this->wheel_ki_ = this->get_parameter("wheel.ki").as_double();
+    this->wheel_kd_ = this->get_parameter("wheel.kd").as_double();
+    this->max_motor_speed_ = this->get_parameter("wheel.max_speed").as_double();
+
+    this->updown_kp_ = this->get_parameter("updown.kp").as_double();
+    this->updown_ki_ = this->get_parameter("updown.ki").as_double();
+    this->updown_kd_ = this->get_parameter("updown.kd").as_double();
+    this->min_updown_enc_ = this->get_parameter("updown.max_enc").as_double();
+    this->max_updown_enc_ = this->get_parameter("updown.min_enc").as_double();
+    this->updown_invert_ = this->get_parameter("updown.invert").as_double();
+}
+
+rcl_interfaces::msg::SetParametersResult MotorManager::parameterEventCallback(const std::vector<rclcpp::Parameter> &parameters) {
+    for (const auto &param : parameters) {
+        if (param.get_name() == "wheel.kp") {
+            wheel_kp_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated wheel.kp to: %.2f", wheel_kp_);
+        } else if (param.get_name() == "wheel.ki") {
+            wheel_ki_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated wheel.ki to: %.2f", wheel_ki_);
+        } else if (param.get_name() == "wheel.kd") {
+            wheel_kd_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated wheel.kd to: %.2f", wheel_kd_);
+        } else if (param.get_name() == "max_motor_speed") {
+            max_motor_speed_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated max_motor_speed to: %.2f", max_motor_speed_);
+        }
+        
+        else if (param.get_name() == "updown.kp") {
+            updown_kp_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated updown.kp to: %.2f", updown_kp_);
+        } else if (param.get_name() == "updown.ki") {
+            updown_ki_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated updown.ki to: %.2f", updown_ki_);
+        } else if (param.get_name() == "updown.kd") {
+            updown_kd_ = param.as_double();
+            RCLCPP_INFO(this->get_logger(), "Updated updown.kd to: %.2f", updown_kd_);
+        }
+    }
+    this->updateWheelPIDs();
+    this->updateUpdownPID();
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
+    return result;
 }
 
 int main(int argc, char *argv[]){

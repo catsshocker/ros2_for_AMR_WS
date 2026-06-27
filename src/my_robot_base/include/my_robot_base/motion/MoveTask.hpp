@@ -1,6 +1,14 @@
 #pragma once
 
 #include "geometry_msgs/msg/twist.hpp"
+#include "my_robot_base/lib/updown_speed.hpp"
+
+enum class move_type{
+    MOVE,
+    TURN,
+    MOVE_AND_TURN,
+};
+
 
 class MovvveTask{
 public:
@@ -15,10 +23,12 @@ public:
     bool finished();
     geometry_msgs::msg::Twist update();
 private:
-    double l , r , dtheta ,dt,Vm,Acc,v_max_calc;
+    double l,dtheta,dt,Vm,Acc;
     int i;
-    double t1,t2,t3;
-    double now_speed,now_angle;
+    double now_speed,move_angle,car_angle;
     bool is_finished;
+    UpDownSpeed updown_speed;
+    move_type move_type_;
+
 };
 

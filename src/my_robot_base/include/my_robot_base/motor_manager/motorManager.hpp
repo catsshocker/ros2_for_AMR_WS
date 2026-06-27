@@ -6,7 +6,7 @@
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
-#include "pid.h"
+#include "my_robot_base/lib/pid.h"
 
 #define ENCODER_COUNT 1464.0
 constexpr double DEG_TO_ENC = ENCODER_COUNT / 360;
@@ -33,11 +33,27 @@ private:
     int zero_speed_counter_ = 0;
     bool enc_initialized_[4] = {false, false, false, false};
 
+    double wheel_kp_, wheel_ki_, wheel_kd_;
+    double updown_kp_, updown_ki_, updown_kd_;
+    double max_motor_speed_;
+    double min_updown_enc_, max_updown_enc_;
+    bool updown_invert_;
+
     PIDController pid_controllers_[4];
 
     void speedCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
     void encoderCallback(const std_msgs::msg::Float64::SharedPtr msg,int id);
     void controlLoop();
+    void updateParameters() ;
+    rcl_interfaces::msg::SetParametersResult parameterEventCallback(const std::vector<rclcpp::Parameter> &parameters);
+    void updateWheelPIDs(){
+        for(int i=0;i<=2;i++){
+            pid_controllers_[i].setGains(this->wheel_kp_,this->wheel_ki_,this->wheel_kd_);
+        }
+    }
+    void updateUpdownPID(){
+        pid_controllers_[3].setGains(this->wheel_kp_,this->wheel_ki_,this->wheel_kd_);
+    }
 
 };
 

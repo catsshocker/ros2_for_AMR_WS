@@ -2,71 +2,94 @@
 
 #include <cmath>
 
-MovvveTask::MovvveTask(double dx, double dy, double dtheta, double Vm, double Acc, double dt) {
+constexpr double PI = 3.14159265358979323846;
+constexpr double TURN_RATIO = 1.5; // Turn speed is 1.5 times the linear speed
+constexpr double MOVE_AND_TURN_RATIO = 3; // Move and turn speed is 0.5 times the linear speed
+
+MovvveTask::MovvveTask(double dx, double dy, double dtheta, double Vm, double Acc, double dt) {  // long:m angle:rad 
+    this->i = 0;
+    this->dt = dt;
+    this->l = std::hypot(dx, dy);
+    this->dtheta = dtheta;
     this->Vm = Vm;
     this->Acc = Acc;
-    this->l = std::hypot(dx, dy);
-    this->r = std::atan2(dy, dx); 
-    this->dtheta = dtheta;
-    this->now_speed = 0;
-    this->now_angle = 0;
-    this->dt = dt;
-    this->i = 0;
     this->is_finished = false;
-
-    // 梯形/三角形速度規劃邏輯 (Trapezoidal / Triangular Profile)
-    // 臨界距離：剛好加速到 Vm 就立刻減速所需的總距離
-    double d_critical = (Vm * Vm) / Acc;
-
-    if (this->l >= d_critical) {
-        // 情況 A：距離夠長，可以達到最大速度 Vm（梯形速度曲線）
-        double t_acc = Vm / Acc;                               // 加速所需時間
-        double t_constant = (this->l - d_critical) / Vm;       // 等速所需時間
-        
-        this->t1 = t_acc;
-        this->t2 = t_acc + t_constant;
-        this->t3 = this->t2 + t_acc;
-        this->v_max_calc = Vm;
+    this->car_angle = 0; // Assuming the robot starts facing along the x-axis
+    this->move_angle = 0; // Will be set based on dx and dy
+    
+    if(std::abs(this->l) < 1e-6 && std::abs(this->dtheta) < 1e-6){  //no move or turn
+        this->is_finished = true;
+        return;
     }
-    else {
-        // 情況 B：距離太短，還沒到 Vm 就得開始減速（三角形速度曲線）
-        // 此時實際能達到的最高速度 v_peak = sqrt(l * Acc)
-        double v_peak = std::sqrt(this->l * Acc);
-        double t_acc = v_peak / Acc;
-        
-        this->t1 = t_acc;
-        this->t2 = t_acc; // 沒有等速階段
-        this->t3 = t_acc + t_acc;
-        this->v_max_calc = v_peak;
+    if(std::abs(this->dtheta) < 1e-6){                // only move
+        this->move_type_ = move_type::MOVE;
+        this->move_angle = std::atan2(dy, dx);
     }
+    else if (std::abs(this->l) < 1e-6){             // only turn
+        this->move_type_ = move_type::TURN;
+        this->move_angle = 0; // Not used for pure turning
+    }
+    else{                               //move and turn
+        this->move_type_ = move_type::MOVE_AND_TURN;
+        this->move_angle = std::atan2(dy, dx);
+    }
+    
+    switch (this->move_type_)
+    {
+    case move_type::MOVE:
+        this->updown_speed = UpDownSpeed(this->l, Vm, Acc);
+        break;
+    case move_type::TURN:
+        this->updown_speed = UpDownSpeed(this->dtheta, Vm * TURN_RATIO, Acc);
+        break;
+    case move_type::MOVE_AND_TURN:
+        double t_linear = this->l / this->Vm;
+        double t_angular = std::abs(this->dtheta) / (this->Vm * TURN_RATIO);
+
+        double t_max = std::max(t_linear, t_angular);
+
+        double Vm_adjusted = this->l / t_max;
+        double Acc_adjusted = this->Acc * (Vm_adjusted / this->Vm); 
+
+        this->updown_speed = UpDownSpeed(this->l, Vm_adjusted, Acc_adjusted);
+        break;
+    }
+    
 }
 
 
 geometry_msgs::msg::Twist MovvveTask::update(){
     geometry_msgs::msg::Twist cmd;
-    if(i*dt<=t1){
-        now_speed = Acc * dt*i;
+    switch (this->move_type_)
+    {
+    case move_type::MOVE:{
+        float speed = this->updown_speed.update(this->dt, i);
+        cmd.linear.x = speed * std::cos(this->move_angle);
+        cmd.linear.y = speed * std::sin(this->move_angle);
+        cmd.angular.z = 0;
+        break;}
+    case move_type::TURN:{
+        float angular_speed = this->updown_speed.update(this->dt, i);
+        cmd.linear.x = 0;
+        cmd.linear.y = 0;
+        cmd.angular.z = angular_speed;
+        break;}
+    case move_type::MOVE_AND_TURN:{
+        float move_speed = this->updown_speed.update(this->dt, i);
+        cmd.linear.x = move_speed * std::cos(this->move_angle-this->car_angle);
+        cmd.linear.y = move_speed * std::sin(this->move_angle-this->car_angle);
+        cmd.angular.z =  move_speed * (this->dtheta / this->l);
+        this->car_angle = this->dtheta*this->updown_speed.getPR();
+        break;}
+    default:{
+        break;}
     }
-    else if(i*dt <= t2){
-        now_speed = v_max_calc;
-    }
-    else if(i*dt <= t3){
-        now_speed = Acc * (t3 - i*dt);
-    }
-    else{
-        this->is_finished = true;
-        return cmd;
-    }
-    now_speed = std::clamp(now_speed,-v_max_calc,v_max_calc);
-    cmd.linear.x = now_speed * std::cos(r);
-    cmd.linear.y = now_speed * std::sin(r);
-    cmd.angular.z = 0;
     i++;
     return cmd;
 }
 
 bool MovvveTask::finished(){
-    return this->is_finished;
+    return this->updown_speed.finished();
 }
 
 

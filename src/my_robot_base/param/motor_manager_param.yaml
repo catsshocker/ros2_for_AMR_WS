@@ -1,0 +1,11 @@
+wheel.kd: 0.5
+wheel.ki: 0.0
+wheel.kp: 1.0
+wheel.max_speed: 480.0
+
+updown.invert: false
+updown.kd: 0.5
+updown.ki: 0.0
+updown.kp: 1.0
+updown.max_enc: 480.0
+updown.min_enc: -480.0
